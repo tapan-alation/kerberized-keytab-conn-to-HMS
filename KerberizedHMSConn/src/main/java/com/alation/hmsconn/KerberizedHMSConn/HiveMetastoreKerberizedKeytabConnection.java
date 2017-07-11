@@ -24,6 +24,8 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authentication.util.KerberosName;
 import org.apache.thrift.TException;
 
+import com.google.common.base.Strings;
+
 
 /**
  * Create a kerberized connection using keytab to Hive Metastore Server
@@ -39,16 +41,20 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static String kerberosPrincipal;
 	static String keytabPath;
 	static String defaultDatabase = "default";
-	static int metastoreClientSocketTimeout = 1200;
-	static int metastoreClientRetryOnError = 10;
-	static HiveConf hiveConf; 
+	static int metastoreClientSocketTimeout = 120;
+	static HiveConf hiveConf;
+	static String tablesToExtract = "";
 
 	public static void main(String[] args)
 	{
 		parseCommandLineArgs(args);
 		setupHiveConf();
 		IMetaStoreClient conn = createInitialHMSConnection();
-		getTablesAndSchemas(conn);
+		if (!Strings.isNullOrEmpty(tablesToExtract)) {
+			getSchemasForGivenTables(conn, defaultDatabase, tablesToExtract.split(","));
+		} else {
+			getAllTablesAndSchemas(conn, defaultDatabase);
+		}
 	}
 
 	private static void parseCommandLineArgs(String[] args)
@@ -59,8 +65,8 @@ public class HiveMetastoreKerberizedKeytabConnection
 		options.addOption("p", "kerberosprincipal", true, "Set the Kerberos Principal");
 		options.addOption("k", "keytabpath", true, "Set the Keytab path");
 		options.addOption("d", "defaultdatabase", true, "Set the default database");
-		options.addOption("r", "retryonerror", true, "Set the METASTORETHRIFTFAILURERETRIES. Default is 10 times");
 		options.addOption("s", "sockettimeout", true, "Set the Hive Metastore Client socket timeout in seconds. Default is 1200 seconds");
+		options.addOption("t", "tablesToExtract", true, "Specify a comma separated list of table names to extract schemas of. ");
 		CommandLineParser parser = new BasicParser();
 		CommandLine cmdLine = null;
 		try {
@@ -98,14 +104,14 @@ public class HiveMetastoreKerberizedKeytabConnection
 				defaultDatabase = cmdLine.getOptionValue("d");
 			}
 
-			if (cmdLine.hasOption("r")){
-				logger.log(Level.INFO, "Using retryonerror setting as: " + cmdLine.getOptionValue("r"));
-				metastoreClientSocketTimeout = Integer.parseInt(cmdLine.getOptionValue("r"));
-			}
-
 			if (cmdLine.hasOption("s")){
 				logger.log(Level.INFO, "Using socket timeout to Hive Metastore Server as: " + cmdLine.getOptionValue("s"));
 				metastoreClientSocketTimeout = Integer.parseInt(cmdLine.getOptionValue("s"));
+			}
+
+			if (cmdLine.hasOption("t")){
+				logger.log(Level.INFO, "Will extract schemas for only the following tables: " + cmdLine.getOptionValue("t"));
+				tablesToExtract = cmdLine.getOptionValue("t");
 			}
 		} catch (ParseException e) {
 			logger.log(Level.SEVERE, "Failed to parse command line properties", e);
@@ -159,37 +165,41 @@ public class HiveMetastoreKerberizedKeytabConnection
 		return action.getConnection();
 	}
 
-	private static void getTablesAndSchemas(IMetaStoreClient metaStoreClient)
+	private static void getSchemasForGivenTables(IMetaStoreClient metaStoreClient, String db, String[] tables) {
+		for (String tableName: tables) {
+			List<FieldSchema> fields = null;
+			try {
+				logger.log(Level.INFO, "About to get all field names / table schema for table: " + tableName);
+				fields = metaStoreClient.getSchema(db, tableName);
+			} catch (Exception e) {
+				logger.log(Level.SEVERE, "Error getting schema for table: " + tableName, e);
+			}
+
+			if (fields != null) {
+				List<FieldSchema> fieldResults = new ArrayList<FieldSchema>();
+				for (FieldSchema field : fields) {
+					fieldResults.add(new FieldSchema(field));
+				}
+				logger.log(Level.INFO,"------------Fields for table: " + tableName + " (Found: " + Integer.toString(fieldResults.size()) + " fields)----------------");
+				logger.log(Level.INFO, Arrays.toString(fieldResults.toArray()));
+				logger.log(Level.INFO, "------------");
+			}
+		}
+		logger.log(Level.INFO, "Success!!");
+	}
+
+	private static void getAllTablesAndSchemas(IMetaStoreClient metaStoreClient, String db)
 	{
 		try {
 			List<String> tables = null;
-			String db = defaultDatabase;
-			logger.log(Level.INFO, new java.util.Date() + "About to get all table names for db: " + db);
+			logger.log(Level.INFO,"About to get all table names for db: " + db);
 			tables = metaStoreClient.getAllTables(db);
 
-			logger.log(Level.INFO, new java.util.Date() + "------------Table names (Found " + Integer.toString(tables.size()) + " tables)----------------");
+			logger.log(Level.INFO,"------------Table names (Found: " + Integer.toString(tables.size()) + " tables)----------------");
 			logger.log(Level.INFO, Arrays.toString(tables.toArray()));
 			logger.log(Level.INFO, "------------");
-			for (String tableName: tables) { 
-				List<FieldSchema> fields = null;
-				try {
-					logger.log(Level.INFO, new java.util.Date() + "About to get all field names / table schema for table: " + tableName);
-					fields = metaStoreClient.getSchema(db, tableName);
-				} catch (Exception e) {
-					logger.log(Level.SEVERE, "Error getting schema for table: " + tableName, e);
-				}
-
-				if (fields != null) {
-					List<FieldSchema> fieldResults = new ArrayList<FieldSchema>();
-					for (FieldSchema field : fields) {
-						fieldResults.add(new FieldSchema(field));
-					}
-					logger.log(Level.INFO, new java.util.Date() + "------------Fields for table: " + tableName + " (Found" + Integer.toString(fieldResults.size()) + " fields)----------------");
-					logger.log(Level.INFO, Arrays.toString(fieldResults.toArray()));
-					logger.log(Level.INFO, "------------");
-				}
-			}
-			logger.log(Level.INFO, "Done!");
+			String[] tblsarray = tables.toArray(new String[0]);
+			getSchemasForGivenTables(metaStoreClient, db, tblsarray);
 			System.exit(0);
 		} catch (MetaException e) {
 			throw new RuntimeException(e);
