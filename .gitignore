@@ -1,0 +1,32 @@
+# backup files
+*~
+
+# Java class files
+*.class
+
+# generated files
+mdextract/target/
+mdextract/bin/
+java/bin/
+gen/
+java/target/
+parser-plugin/target
+parser/target
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Eclipse project files
+.metadata
+.classpath
+.project
+.settings
+
+# IDEA project files
+.idea/
+target/
+*.iml
+# Custom
+java/src/test/resources/temp
+
+java/lib/hadoop-logparser/alation-logparser/1.0-SNAPSHOT/alation-logparser-1.0-SNAPSHOT.jar
