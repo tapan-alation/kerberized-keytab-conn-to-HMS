@@ -166,26 +166,30 @@ public class HiveMetastoreKerberizedKeytabConnection
 	}
 
 	private static void getSchemasForGivenTables(IMetaStoreClient metaStoreClient, String db, String[] tables) {
-		for (String tableName: tables) {
-			List<FieldSchema> fields = null;
-			try {
-				logger.log(Level.INFO, "About to get all field names / table schema for table: " + tableName);
-				fields = metaStoreClient.getSchema(db, tableName);
-			} catch (Exception e) {
-				logger.log(Level.SEVERE, "Error getting schema for table: " + tableName, e);
-			}
-
-			if (fields != null) {
-				List<FieldSchema> fieldResults = new ArrayList<FieldSchema>();
-				for (FieldSchema field : fields) {
-					fieldResults.add(new FieldSchema(field));
+		try {
+			for (String tableName: tables) {
+				List<FieldSchema> fields = null;
+				try {
+					logger.log(Level.INFO, "About to get all field names / table schema for table: " + tableName);
+					fields = metaStoreClient.getSchema(db, tableName);
+				} catch (Exception e) {
+					logger.log(Level.SEVERE, "Error getting schema for table: " + tableName, e);
 				}
-				logger.log(Level.INFO,"------------Fields for table: " + tableName + " (Found: " + Integer.toString(fieldResults.size()) + " fields)----------------");
-				logger.log(Level.INFO, Arrays.toString(fieldResults.toArray()));
-				logger.log(Level.INFO, "------------");
+
+				if (fields != null) {
+					List<FieldSchema> fieldResults = new ArrayList<FieldSchema>();
+					for (FieldSchema field : fields) {
+						fieldResults.add(new FieldSchema(field));
+					}
+					logger.log(Level.INFO,"------------Fields for table: " + tableName + " (Found: " + Integer.toString(fieldResults.size()) + " fields)----------------");
+					logger.log(Level.INFO, Arrays.toString(fieldResults.toArray()));
+					logger.log(Level.INFO, "------------");
+				}
 			}
+			logger.log(Level.INFO, "Success!!");
+		} catch (Exception e) {
+			throw new RuntimeException(e);
 		}
-		logger.log(Level.INFO, "Success!!");
 	}
 
 	private static void getAllTablesAndSchemas(IMetaStoreClient metaStoreClient, String db)
