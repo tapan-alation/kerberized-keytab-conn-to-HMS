@@ -9,9 +9,9 @@ import org.apache.hadoop.hive.metastore.api.MetaException;
 
 public interface CustomIMetaStoreClient extends IMetaStoreClient {
 	/**
-     *  Tries to reconnect this MetaStoreClient to the MetaStore
-     *      within correct security context if applicable
-   * @throws IOException
-     */
-  void reconnect(Subject subject) throws MetaException, IOException;
+	 *  Tries to reconnect this MetaStoreClient to the MetaStore
+	 *      within correct security context if applicable
+	 * @throws IOException
+	 */
+	void reconnect(Subject subject) throws MetaException, IOException;
 }

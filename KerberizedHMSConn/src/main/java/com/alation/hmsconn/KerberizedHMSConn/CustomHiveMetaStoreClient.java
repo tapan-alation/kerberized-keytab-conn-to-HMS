@@ -12,26 +12,26 @@ import org.apache.hadoop.security.UserGroupInformation;
 
 
 /**
-*
-* Override HiveMetaStoreClient reconnect method to use custom login context if provided
-*
-*/
+ *
+ * Override HiveMetaStoreClient reconnect method to use custom login context if provided
+ *
+ */
 public class CustomHiveMetaStoreClient extends HiveMetaStoreClient implements CustomIMetaStoreClient {
-   final static Logger logger = Logger.getLogger(HiveMetastoreKerberizedKeytabConnection.class.getName());
-   
-   public CustomHiveMetaStoreClient(HiveConf conf) throws MetaException {
-       super(conf);
-   }
+	final static Logger logger = Logger.getLogger(HiveMetastoreKerberizedKeytabConnection.class.getName());
 
-   public void reconnect(Subject loginSubject) throws IOException, MetaException  {
-       if (loginSubject != null){
-    	   logger.info("Setting up proper kerberos login context for the reconnect");
-           // do the reconnect within the correct login context
-    	   ReconnectKerbAction action = new ReconnectKerbAction((CustomIMetaStoreClient) this);
-           UserGroupInformation realUgi = UserGroupInformation.getUGIFromSubject(loginSubject);
-           realUgi.doAs(action);
-       } else {
-           super.reconnect();
-       }
-   }
+	public CustomHiveMetaStoreClient(HiveConf conf) throws MetaException {
+		super(conf);
+	}
+
+	public void reconnect(Subject loginSubject) throws IOException, MetaException  {
+		if (loginSubject != null){
+			logger.info("Setting up proper kerberos login context for the reconnect");
+			// do the reconnect within the correct login context
+			ReconnectKerbAction action = new ReconnectKerbAction((CustomIMetaStoreClient) this);
+			UserGroupInformation realUgi = UserGroupInformation.getUGIFromSubject(loginSubject);
+			realUgi.doAs(action);
+		} else {
+			super.reconnect();
+		}
+	}
 }
