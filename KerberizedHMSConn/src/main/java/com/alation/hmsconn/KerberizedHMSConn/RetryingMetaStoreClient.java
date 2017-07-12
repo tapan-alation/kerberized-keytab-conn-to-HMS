@@ -5,6 +5,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.security.auth.Subject;
@@ -13,12 +15,14 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocolException;
 import org.apache.thrift.transport.TTransportException;
 
+import java.util.logging.Logger;
 /**
  *
  * Modified from https://raw.githubusercontent.com/apache/hive/master/metastore/src/java/org/apache/hadoop/hive/metastore/RetryingMetaStoreClient.java
@@ -26,27 +30,31 @@ import org.apache.thrift.transport.TTransportException;
  */
 public class RetryingMetaStoreClient implements InvocationHandler{
 	private static final Log LOG = LogFactory.getLog(RetryingMetaStoreClient.class.getName());
+	private static final String GET_SCHEMA_METHOD = "getSchema";
 
 	private final CustomIMetaStoreClient base;
 	private final int retryLimit = 10;
 	private final long retryDelaySeconds = 2;
 	private final Subject loginSubject;
+	private boolean skipRepeatedGetSchemaCall = false;
+	private String lastGetSchemaCalledOn = "";
 
 	public RetryingMetaStoreClient(HiveConf hiveConf,
 			Class<? extends CustomIMetaStoreClient> msClientClass,
-			Subject subject) throws MetaException {
+			Subject subject, boolean skipRepeatedGetSchemaCall) throws MetaException {
 		this.loginSubject = subject;
+		this.skipRepeatedGetSchemaCall = skipRepeatedGetSchemaCall;
 		this.base = MetaStoreUtils.newInstance(msClientClass, new Class[] {HiveConf.class},
 				new Object[] {hiveConf});
 
 	}
 
 	public static CustomIMetaStoreClient getProxy(HiveConf hiveConf,
-			String mscClassName, Subject loginSubject) throws MetaException {
+			String mscClassName, Subject loginSubject, boolean skipRepeatedGetSchemaCall) throws MetaException {
 
 		Class<? extends CustomIMetaStoreClient> baseClass = (Class<? extends CustomIMetaStoreClient>) MetaStoreUtils.getClass(mscClassName);
 
-		RetryingMetaStoreClient handler = new RetryingMetaStoreClient(hiveConf, baseClass, loginSubject);
+		RetryingMetaStoreClient handler = new RetryingMetaStoreClient(hiveConf, baseClass, loginSubject, skipRepeatedGetSchemaCall);
 
 		return (CustomIMetaStoreClient) Proxy.newProxyInstance(RetryingMetaStoreClient.class.getClassLoader(), baseClass.getInterfaces(), handler);
 	}
@@ -62,6 +70,17 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 				if(retriesMade > 0){
 					// reconnect within correct login context if subject provided
 					base.reconnect(this.loginSubject);
+
+					if (this.skipRepeatedGetSchemaCall && method.getName().equals(GET_SCHEMA_METHOD)) {
+						String tableName = (String) args[1];  // first is dbname. second is tablename to get schema of
+						if (tableName.equals(lastGetSchemaCalledOn)){
+							// we tried getting schema of this table name before and it forced a reconnection
+							// so now we will just return a fake response to move on to next api call in order to prevent more reconnects
+							LOG.info("Detected a repeat call. Moving on to next call..");
+							LOG.info("Returning dummy data for " + GET_SCHEMA_METHOD + " call for " + tableName);
+							return ret;
+						}
+					}
 				}
 				ret = method.invoke(base, args);
 				break;
@@ -96,6 +115,12 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 					caughtException = e;
 				} else {
 					throw e;
+				}
+			}
+
+			if (this.skipRepeatedGetSchemaCall) {
+				if (method.getName().equals(GET_SCHEMA_METHOD)) {
+					lastGetSchemaCalledOn = (String) args[1];  // first is dbname. second is tablename to get schema of
 				}
 			}
 

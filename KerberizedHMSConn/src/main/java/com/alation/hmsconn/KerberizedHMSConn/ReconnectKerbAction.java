@@ -14,7 +14,9 @@ public class ReconnectKerbAction implements java.security.PrivilegedAction<Void>
 	public Void run() {
 		try {
 			this.m_client.reconnect(null);
-		} catch (MetaException | IOException e) {
+		} catch (MetaException e) {
+			throw new RuntimeException(e);
+		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 		return null;

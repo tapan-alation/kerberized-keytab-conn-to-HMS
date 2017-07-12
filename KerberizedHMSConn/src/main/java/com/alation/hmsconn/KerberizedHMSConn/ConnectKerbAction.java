@@ -11,10 +11,12 @@ class ConnectKerbAction implements java.security.PrivilegedAction<Void> {
 	private IMetaStoreClient m_connection;
 	private HiveConf m_conf;
 	private Subject login_subject;
+	private boolean skipRepeatedGetSchemaCall = false;
 
-	public ConnectKerbAction(final HiveConf conf, Subject subject) {
+	public ConnectKerbAction(final HiveConf conf, Subject subject, boolean skipRepeatedGetSchemaCall) {
 		this.m_conf = conf;
 		this.login_subject = subject;
+		this.skipRepeatedGetSchemaCall = skipRepeatedGetSchemaCall;
 	}
 
 	public IMetaStoreClient getConnection() {
@@ -25,7 +27,7 @@ class ConnectKerbAction implements java.security.PrivilegedAction<Void> {
 	public Void run() {
 		try {
 			IMetaStoreClient client = RetryingMetaStoreClient.getProxy(m_conf,
-					CustomHiveMetaStoreClient.class.getName(), this.login_subject);
+					CustomHiveMetaStoreClient.class.getName(), this.login_subject, this.skipRepeatedGetSchemaCall);
 			this.m_connection = client;
 		} catch (MetaException e) {
 			throw new RuntimeException(e);
