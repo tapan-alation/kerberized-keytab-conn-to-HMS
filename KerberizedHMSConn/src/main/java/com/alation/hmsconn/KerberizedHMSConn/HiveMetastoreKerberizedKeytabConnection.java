@@ -1,4 +1,6 @@
 package com.alation.hmsconn.KerberizedHMSConn;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -46,6 +48,9 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static String tablesToExtract = "";
 	static boolean skipRepeatedGetSchemaCall = false;
 
+	static ArrayList<String> tablesWithExceptions = new ArrayList<String>();
+	static ArrayList<String> tablesSkipped = new ArrayList<String>();
+
 	public static void main(String[] args)
 	{
 		parseCommandLineArgs(args);
@@ -56,6 +61,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 		} else {
 			getAllTablesAndSchemas(conn, defaultDatabase);
 		}
+		printStats();
 	}
 
 	private static void parseCommandLineArgs(String[] args)
@@ -172,6 +178,13 @@ public class HiveMetastoreKerberizedKeytabConnection
 		return action.getConnection();
 	}
 
+	private static String convertExceptionToString(Exception e) {
+		StringWriter sw = new StringWriter();
+		PrintWriter pw = new PrintWriter(sw);
+		e.printStackTrace(pw);
+		return sw.toString(); // stack trace as a string
+	}
+
 	private static void getSchemasForGivenTables(IMetaStoreClient metaStoreClient, String db, String[] tables) {
 		try {
 			for (String tableName: tables) {
@@ -181,6 +194,8 @@ public class HiveMetastoreKerberizedKeytabConnection
 					fields = metaStoreClient.getSchema(db, tableName);
 				} catch (Exception e) {
 					logger.log(Level.SEVERE, "Error getting schema for table: " + tableName, e);
+					tablesWithExceptions.add(tableName + ": \n " + convertExceptionToString(e));
+					continue;
 				}
 
 				if (null != fields) {
@@ -193,9 +208,9 @@ public class HiveMetastoreKerberizedKeytabConnection
 					logger.log(Level.INFO, "------------");
 				} else {
 					logger.log(Level.INFO, "Skipped table: " + tableName);
+					tablesSkipped.add(tableName);
 				}
 			}
-			logger.log(Level.INFO, "Success!!");
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -213,7 +228,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 			logger.log(Level.INFO, "------------");
 			String[] tblsarray = tables.toArray(new String[0]);
 			getSchemasForGivenTables(metaStoreClient, db, tblsarray);
-			System.exit(0);
 		} catch (MetaException e) {
 			throw new RuntimeException(e);
 		} catch (UnknownDBException e1) {
@@ -223,5 +237,26 @@ public class HiveMetastoreKerberizedKeytabConnection
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
+	}
+
+	private static void printStats() {
+		int numTablesWithExceptions = tablesWithExceptions.size();
+		int numTablesSkipped = tablesSkipped.size();
+		if (numTablesWithExceptions > 0) {
+			logger.log(Level.INFO, "Number of tables with exceptions: " + numTablesWithExceptions);
+			logger.log(Level.INFO, "Tables with exceptions: ");
+			for (String tableNameWithException : tablesWithExceptions) {
+				logger.log(Level.INFO, tableNameWithException);
+				logger.log(Level.INFO, "--------");
+			}
+		}
+		if (numTablesSkipped > 0) {
+			logger.log(Level.INFO, "Number of tables skipped due to reconnection to the metastore: " + numTablesSkipped);
+			logger.log(Level.INFO, "Skipped Table Names due to lack of response from  Hive MetaStore Server: ");
+			for (String skippedTableName : tablesSkipped) {
+				logger.log(Level.INFO, skippedTableName);
+			}
+		}
+		logger.log(Level.INFO, "Done!");
 	}
 }
