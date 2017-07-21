@@ -46,7 +46,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static int metastoreClientSocketTimeout = 120;
 	static HiveConf hiveConf;
 	static String tablesToExtract = "";
-	static boolean skipRepeatedGetSchemaCall = false;
 
 	static ArrayList<String> tablesWithExceptions = new ArrayList<String>();
 	static ArrayList<String> tablesSkipped = new ArrayList<String>();
@@ -74,7 +73,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 		options.addOption("d", "defaultdatabase", true, "Set the default database");
 		options.addOption("s", "sockettimeout", true, "Set the Hive Metastore Client socket timeout in seconds. Default is 1200 seconds");
 		options.addOption("t", "tablesToExtract", true, "Specify a comma separated list of table names to extract schemas of. ");
-		options.addOption("a", "avoidRepeatingSameSchemaFetch", false, "When specified, reconnection to Hive MetaStore Server will not repeat last getSchema call");
 		CommandLineParser parser = new BasicParser();
 		CommandLine cmdLine = null;
 		try {
@@ -121,11 +119,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 				logger.log(Level.INFO, "Will extract schemas for only the following tables: " + cmdLine.getOptionValue("t"));
 				tablesToExtract = cmdLine.getOptionValue("t");
 			}
-
-			if (cmdLine.hasOption("a")){
-				logger.log(Level.INFO, "Will not repeat last getSchema call on reconnections");
-				skipRepeatedGetSchemaCall = true;
-			}
 		} catch (ParseException e) {
 			logger.log(Level.SEVERE, "Failed to parse command line properties", e);
 		}
@@ -169,7 +162,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 		try {
 			lc = new LoginContext(kerberosLoginContextName, null, kcbh, customJaasConfig);
 			lc.login();
-			action = new ConnectKerbAction(hiveConf, lc.getSubject(), skipRepeatedGetSchemaCall);
+			action = new ConnectKerbAction(hiveConf, lc.getSubject());
 			UserGroupInformation realUgi = UserGroupInformation.getUGIFromSubject(lc.getSubject());
 			realUgi.doAs(action);
 		} catch (Exception e) {
