@@ -3,6 +3,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authentication.util.KerberosName;
@@ -43,9 +45,12 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static String kerberosPrincipal;
 	static String keytabPath;
 	static String defaultDatabase = "default";
-	static int metastoreClientSocketTimeout = 120;
+	static int metastoreClientSocketTimeout = 12;
 	static HiveConf hiveConf;
 	static String tablesToExtract = "";
+	static boolean getTablesInReverse = false;
+	static boolean use_getTableObjectsByName_call = false;
+	static boolean enableSkippingMechanism = false;
 
 	static ArrayList<String> tablesWithExceptions = new ArrayList<String>();
 	static ArrayList<String> tablesSkipped = new ArrayList<String>();
@@ -71,8 +76,11 @@ public class HiveMetastoreKerberizedKeytabConnection
 		options.addOption("p", "kerberosprincipal", true, "Set the Kerberos Principal");
 		options.addOption("k", "keytabpath", true, "Set the Keytab path");
 		options.addOption("d", "defaultdatabase", true, "Set the default database");
-		options.addOption("s", "sockettimeout", true, "Set the Hive Metastore Client socket timeout in seconds. Default is 1200 seconds");
+		options.addOption("r", "reverseTables", false, "When set, tables are extracted in reverse order");
+		options.addOption("st", "sockettimeout", true, "Set the Hive Metastore Client socket timeout in seconds. Default is 12 seconds");
 		options.addOption("t", "tablesToExtract", true, "Specify a comma separated list of table names to extract schemas of. ");
+		options.addOption("s", "skipFailedCalls", false, "When enabled, failed method calls to metastore are skipped after default retry limit of 2");
+		options.addOption("gtobn", "use_getTableObjectsByName_call", false, "Specify if getTableObjectsByName method of the metastore client should be invoked");
 		CommandLineParser parser = new BasicParser();
 		CommandLine cmdLine = null;
 		try {
@@ -105,20 +113,35 @@ public class HiveMetastoreKerberizedKeytabConnection
 				logger.log(Level.SEVERE, "Missing keytab path, -k option");
 			}
 
-			if (cmdLine.hasOption("d")){
-				logger.log(Level.INFO, "Using default database to connect to on the Hive Metastore Server as: " + cmdLine.getOptionValue("d"));
-				defaultDatabase = cmdLine.getOptionValue("d");
+			if (cmdLine.hasOption("r")){
+				logger.log(Level.INFO, "Will get tables in reverse order");
+				getTablesInReverse = true;
 			}
 
-			if (cmdLine.hasOption("s")){
-				logger.log(Level.INFO, "Using socket timeout to Hive Metastore Server as: " + cmdLine.getOptionValue("s"));
-				metastoreClientSocketTimeout = Integer.parseInt(cmdLine.getOptionValue("s"));
+			if (cmdLine.hasOption("gtobn")) {
+                logger.log(Level.INFO, "Will use getTableObjectsByName method of the metastore client");
+                use_getTableObjectsByName_call = true;
+            }
+
+			if (cmdLine.hasOption("d")){
+                logger.log(Level.INFO, "Using default database to connect to on the Hive Metastore Server as: " + cmdLine.getOptionValue("d"));
+                defaultDatabase = cmdLine.getOptionValue("d");
+            }
+
+			if (cmdLine.hasOption("st")){
+				logger.log(Level.INFO, "Using socket timeout to Hive Metastore Server as: " + cmdLine.getOptionValue("st"));
+				metastoreClientSocketTimeout = Integer.parseInt(cmdLine.getOptionValue("st"));
 			}
 
 			if (cmdLine.hasOption("t")){
 				logger.log(Level.INFO, "Will extract schemas for only the following tables: " + cmdLine.getOptionValue("t"));
 				tablesToExtract = cmdLine.getOptionValue("t");
 			}
+
+			if (cmdLine.hasOption("s")){
+                logger.log(Level.INFO, "Enabled skipping of failed metastore calls mechanism ");
+                enableSkippingMechanism = true;
+            }
 		} catch (ParseException e) {
 			logger.log(Level.SEVERE, "Failed to parse command line properties", e);
 		}
@@ -162,7 +185,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 		try {
 			lc = new LoginContext(kerberosLoginContextName, null, kcbh, customJaasConfig);
 			lc.login();
-			action = new ConnectKerbAction(hiveConf, lc.getSubject());
+			action = new ConnectKerbAction(hiveConf, lc.getSubject(), enableSkippingMechanism);
 			UserGroupInformation realUgi = UserGroupInformation.getUGIFromSubject(lc.getSubject());
 			realUgi.doAs(action);
 		} catch (Exception e) {
@@ -176,6 +199,17 @@ public class HiveMetastoreKerberizedKeytabConnection
 		PrintWriter pw = new PrintWriter(sw);
 		e.printStackTrace(pw);
 		return sw.toString(); // stack trace as a string
+	}
+
+	private static void getTableObjectsByName(IMetaStoreClient metaStoreClient, String db, List<String> tables) {
+	    try {
+	        List<Table> tableResults  = metaStoreClient.getTableObjectsByName(db, tables);
+	        for (Table tableResult : tableResults){
+	            logger.log(Level.INFO, "---------Got Table: " + tableResult.getTableName() + " in db: " + tableResult.getDbName());
+	        }
+	    } catch (Exception e) {
+	        throw new RuntimeException(e);
+	    }
 	}
 
 	private static void getSchemasForGivenTables(IMetaStoreClient metaStoreClient, String db, String[] tables) {
@@ -215,12 +249,20 @@ public class HiveMetastoreKerberizedKeytabConnection
 			List<String> tables = null;
 			logger.log(Level.INFO,"About to get all table names for db: " + db);
 			tables = metaStoreClient.getAllTables(db);
+			if (getTablesInReverse) {
+                Collections.reverse(tables);
+            }
 
-			logger.log(Level.INFO,"------------Table names (Found: " + Integer.toString(tables.size()) + " tables)----------------");
-			logger.log(Level.INFO, Arrays.toString(tables.toArray()));
-			logger.log(Level.INFO, "------------");
-			String[] tblsarray = tables.toArray(new String[0]);
-			getSchemasForGivenTables(metaStoreClient, db, tblsarray);
+            logger.log(Level.INFO,"------------Table names (Found: " + Integer.toString(tables.size()) + " tables)----------------");
+            logger.log(Level.INFO, Arrays.toString(tables.toArray()));
+            logger.log(Level.INFO, "------------");
+
+			if (use_getTableObjectsByName_call) {
+			    getTableObjectsByName(metaStoreClient, db, tables);
+			} else {
+	            String[] tblsarray = tables.toArray(new String[0]);
+	            getSchemasForGivenTables(metaStoreClient, db, tblsarray);
+			}
 		} catch (MetaException e) {
 			throw new RuntimeException(e);
 		} catch (UnknownDBException e1) {

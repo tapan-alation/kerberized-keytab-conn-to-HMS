@@ -5,10 +5,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import javax.security.auth.Subject;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.api.MetaException;
@@ -22,7 +23,7 @@ import org.apache.thrift.transport.TTransportException;
  *
  */
 public class RetryingMetaStoreClient implements InvocationHandler{
-	private static final Log LOG = LogFactory.getLog(RetryingMetaStoreClient.class.getName());
+	static final Logger logger = Logger.getLogger(RetryingMetaStoreClient.class.getName());
 	private MethodCallIdentifier lastFailedMethodCallIdentifier;
 	private boolean skipLastFailedMethodCall = true;
 	private int retryLimit = 3;
@@ -51,7 +52,7 @@ public class RetryingMetaStoreClient implements InvocationHandler{
         }
 
         public boolean equals(final MethodCallIdentifier other) {
-            return this.uniqueMethodCallStr == other.uniqueMethodCallStr;
+            return this.toString().equals(other.toString());
         }
 
         public String toString(){
@@ -70,11 +71,11 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 	}
 
 	public static CustomIMetaStoreClient getProxy(HiveConf hiveConf,
-			String mscClassName, Subject loginSubject) throws MetaException {
+			String mscClassName, Subject loginSubject, boolean skipLastFailedMethodCall) throws MetaException {
 
 		Class<? extends CustomIMetaStoreClient> baseClass = (Class<? extends CustomIMetaStoreClient>) MetaStoreUtils.getClass(mscClassName);
 
-		RetryingMetaStoreClient handler = new RetryingMetaStoreClient(hiveConf, baseClass, loginSubject, true);
+		RetryingMetaStoreClient handler = new RetryingMetaStoreClient(hiveConf, baseClass, loginSubject, skipLastFailedMethodCall);
 
 		return (CustomIMetaStoreClient) Proxy.newProxyInstance(RetryingMetaStoreClient.class.getClassLoader(), baseClass.getInterfaces(), handler);
 	}
@@ -84,7 +85,7 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 		Object ret = null;
 		int retriesMade = 0;
 		TException caughtException = null;
-
+		logger.log(Level.INFO, "boolean skipLastFailedMethodCall: " + skipLastFailedMethodCall + ", numRetriesbeforeskipping: " + numRetriesBeforeSkipping);
 		while (true) {
 			try {
 				if(retriesMade > 0){
@@ -93,10 +94,11 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 
 					if (skipLastFailedMethodCall && retriesMade >= numRetriesBeforeSkipping){
 					    MethodCallIdentifier currentMethodCallIdentifier = new MethodCallIdentifier(method, args);
-						String tableName = (String) args[1];  // first is dbname. second is tablename to get schema of
 						if (currentMethodCallIdentifier.equals(lastFailedMethodCallIdentifier)) {
-                            LOG.info("Skipping the last failed method call: " + lastFailedMethodCallIdentifier + " after: " + retriesMade + " reconnection attempts.");
+						    logger.log(Level.INFO, "Skipping the last failed method call: " + lastFailedMethodCallIdentifier + " after: " + retriesMade + " reconnection attempts.");
                             throw new Exception("Failed to get results from the Hive MetaStore Server for " + lastFailedMethodCallIdentifier);
+                        } else {
+                            logger.log(Level.INFO, "current method call id:" + currentMethodCallIdentifier + ". Last method call id:" + lastFailedMethodCallIdentifier);
                         }
 					}
 				}
@@ -144,7 +146,7 @@ public class RetryingMetaStoreClient implements InvocationHandler{
 				throw caughtException;
 			}
 			retriesMade++;
-			LOG.warn("MetaStoreClient lost connection. Attempting to reconnect (" + retriesMade +
+			logger.log(Level.INFO, "MetaStoreClient lost connection. Attempting to reconnect (" + retriesMade +
 					" of " + retryLimit + ") after " + retryDelaySeconds + "s. " + method.getName(), caughtException);
 			Thread.sleep(retryDelaySeconds * 1000);
 		}
