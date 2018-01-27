@@ -20,6 +20,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
+import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Table;
@@ -50,6 +51,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static String tablesToExtract = "";
 	static boolean getTablesInReverse = false;
 	static boolean use_getTableObjectsByName_call = false;
+	static boolean use_getDatabases_call = false;
 	static boolean enableSkippingMechanism = false;
 
 	static ArrayList<String> tablesWithExceptions = new ArrayList<String>();
@@ -62,10 +64,35 @@ public class HiveMetastoreKerberizedKeytabConnection
 		IMetaStoreClient conn = createInitialHMSConnection();
 		if (!Strings.isNullOrEmpty(tablesToExtract)) {
 			getSchemasForGivenTables(conn, defaultDatabase, tablesToExtract.split(","));
-		} else {
+		} else if (use_getDatabases_call) {
+			getAllDatabases(conn);
+		}
+		else {
 			getAllTablesAndSchemas(conn, defaultDatabase);
 		}
 		printStats();
+	}
+
+	private static void getAllDatabases(IMetaStoreClient conn) {
+		List<String> databases = null;
+		logger.log(Level.INFO,"About to get all database names by calling getDatabases ");
+		try {
+            databases = conn.getAllDatabases();
+            logger.log(Level.INFO,"------------Database names (Found: " + Integer.toString(databases.size()) + " databases)----------------");
+            logger.log(Level.INFO, Arrays.toString(databases.toArray()));
+            logger.log(Level.INFO, "------------Now will try to call getDatabase on each database name--------");
+            for (String databaseName: databases) {
+                Database hivedb = null;
+                logger.log(Level.INFO, "------------Calling getDatabase for database name: " + "databaseName");
+                hivedb = conn.getDatabase(databaseName);
+                logger.log(Level.INFO, hivedb.getName() + " description: " + hivedb.getDescription() +
+                        " Location URI: " + hivedb.getLocationUri());
+            }
+
+        } catch (Exception e){
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
 	}
 
 	private static void parseCommandLineArgs(String[] args)
@@ -81,6 +108,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 		options.addOption("t", "tablesToExtract", true, "Specify a comma separated list of table names to extract schemas of. ");
 		options.addOption("s", "skipFailedCalls", false, "When enabled, failed method calls to metastore are skipped after default retry limit of 2");
 		options.addOption("gtobn", "use_getTableObjectsByName_call", false, "Specify if getTableObjectsByName method of the metastore client should be invoked");
+		options.addOption("dbs", "get_all_databases_or_schemas", false, "Specify if getAllDatabases and getDatabase method of the metastore client should be invoked");
 		CommandLineParser parser = new BasicParser();
 		CommandLine cmdLine = null;
 		try {
@@ -122,6 +150,11 @@ public class HiveMetastoreKerberizedKeytabConnection
                 logger.log(Level.INFO, "Will use getTableObjectsByName method of the metastore client");
                 use_getTableObjectsByName_call = true;
             }
+
+			if (cmdLine.hasOption("dbs")) {
+				logger.log(Level.INFO, "Will use getDatabase and getDatabases method of the metastore client");
+				use_getDatabases_call = true;
+			}
 
 			if (cmdLine.hasOption("d")){
                 logger.log(Level.INFO, "Using default database to connect to on the Hive Metastore Server as: " + cmdLine.getOptionValue("d"));

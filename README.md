@@ -3,7 +3,9 @@
 ## Info
 This repository contains sample code that could be used to connect to a kerberized (with keytab) instance of Hive Metastore Server. 
 
-Upon successfull connection, the program uses HiveMetaStoreClient APIs to get tables along with their schemas from the specified default database.
+Upon successfull connection, the program uses HiveMetaStoreClient APIs to either:
+1. get tables along with their schemas from the specified default database.
+2. get all Databases / Schema objects
 ## Instructions:
 1. Download and unzip the jar.zip file
 2. Run the jar as follows:
@@ -27,6 +29,7 @@ Upon successfull connection, the program uses HiveMetaStoreClient APIs to get ta
    -r
    -s     
    -gtobn 
+   -dbs
  
    ```
    
@@ -39,4 +42,6 @@ Upon successfull connection, the program uses HiveMetaStoreClient APIs to get ta
    Specify -s (Skipping mechanism) if failed calls to the metastore should be skipped after retrying a default of 2 times
 
    Specify -gtobn (getTableObjectsByName) to invoke getTableObjectsByName method on the metastore. 
+
+   Specify -dbs to invoke getDatabases and getDatabase methods on the metastore. 
 
