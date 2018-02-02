@@ -83,7 +83,7 @@ public class HiveMetastoreKerberizedKeytabConnection
             logger.log(Level.INFO, "------------Now will try to call getDatabase on each database name--------");
             for (String databaseName: databases) {
                 Database hivedb = null;
-                logger.log(Level.INFO, "------------Calling getDatabase for database name: " + "databaseName");
+                logger.log(Level.INFO, "------------Calling getDatabase for database name: " + databaseName);
                 hivedb = conn.getDatabase(databaseName);
                 logger.log(Level.INFO, hivedb.getName() + " description: " + hivedb.getDescription() +
                         " Location URI: " + hivedb.getLocationUri());
