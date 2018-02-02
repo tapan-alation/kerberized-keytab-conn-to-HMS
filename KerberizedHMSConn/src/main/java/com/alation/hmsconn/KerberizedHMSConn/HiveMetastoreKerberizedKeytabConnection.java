@@ -52,7 +52,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 	static boolean getTablesInReverse = false;
 	static boolean use_getTableObjectsByName_call = false;
 	static boolean use_getDatabases_call = false;
-	static boolean enableSkippingMechanism = false;
 
 	static ArrayList<String> tablesWithExceptions = new ArrayList<String>();
 	static ArrayList<String> tablesSkipped = new ArrayList<String>();
@@ -90,8 +89,8 @@ public class HiveMetastoreKerberizedKeytabConnection
             }
 
         } catch (Exception e){
+		    logger.log(Level.SEVERE, "Caught an error: " + e.getMessage() + ". Stack trace: ");
             e.printStackTrace();
-            throw new RuntimeException(e);
         }
 	}
 
@@ -106,7 +105,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 		options.addOption("r", "reverseTables", false, "When set, tables are extracted in reverse order");
 		options.addOption("st", "sockettimeout", true, "Set the Hive Metastore Client socket timeout in seconds. Default is 12 seconds");
 		options.addOption("t", "tablesToExtract", true, "Specify a comma separated list of table names to extract schemas of. ");
-		options.addOption("s", "skipFailedCalls", false, "When enabled, failed method calls to metastore are skipped after default retry limit of 2");
 		options.addOption("gtobn", "use_getTableObjectsByName_call", false, "Specify if getTableObjectsByName method of the metastore client should be invoked");
 		options.addOption("dbs", "get_all_databases_or_schemas", false, "Specify if getAllDatabases and getDatabase method of the metastore client should be invoked");
 		CommandLineParser parser = new BasicParser();
@@ -171,10 +169,6 @@ public class HiveMetastoreKerberizedKeytabConnection
 				tablesToExtract = cmdLine.getOptionValue("t");
 			}
 
-			if (cmdLine.hasOption("s")){
-                logger.log(Level.INFO, "Enabled skipping of failed metastore calls mechanism ");
-                enableSkippingMechanism = true;
-            }
 		} catch (ParseException e) {
 			logger.log(Level.SEVERE, "Failed to parse command line properties", e);
 		}
@@ -218,7 +212,7 @@ public class HiveMetastoreKerberizedKeytabConnection
 		try {
 			lc = new LoginContext(kerberosLoginContextName, null, kcbh, customJaasConfig);
 			lc.login();
-			action = new ConnectKerbAction(hiveConf, lc.getSubject(), enableSkippingMechanism);
+			action = new ConnectKerbAction(hiveConf, lc.getSubject(), true);
 			UserGroupInformation realUgi = UserGroupInformation.getUGIFromSubject(lc.getSubject());
 			realUgi.doAs(action);
 		} catch (Exception e) {

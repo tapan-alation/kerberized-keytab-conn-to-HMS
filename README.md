@@ -27,7 +27,6 @@ Upon successfull connection, the program uses HiveMetaStoreClient APIs to either
    -st    {SOCKET_TIMEOUT_SECONDS} 
    -t     {TABLE_NAMES}
    -r
-   -s     
    -gtobn 
    -dbs
  
@@ -38,8 +37,6 @@ Upon successfull connection, the program uses HiveMetaStoreClient APIs to either
    Replace {TABLE_NAMES} with comma separated String of table names to extract schemas of. Ex: "table_1,table_2,table_3"]
 
    Specify -r (Reverse table names) if table names should be reversed
-
-   Specify -s (Skipping mechanism) if failed calls to the metastore should be skipped after retrying a default of 2 times
 
    Specify -gtobn (getTableObjectsByName) to invoke getTableObjectsByName method on the metastore. 
 
